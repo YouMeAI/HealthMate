@@ -158,9 +158,19 @@ async function handlePDF(ctx, responseBuffer) {
 
 bot.on(['photo', 'document'], async (ctx) => {
   try {
+    console.log('Received message:', ctx.message);
+
     const file = ctx.message.photo?.pop() || ctx.message.document;
+    if (!file) {
+      ctx.reply('Ошибка: файл не найден.');
+      return;
+    }
+
     const fileLink = await ctx.telegram.getFileLink(file.file_id);
+    console.log('File link:', fileLink.href);
+
     const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
+    console.log('File downloaded with status:', response.status);
 
     if (file.mime_type === 'application/pdf') {
       await handlePDF(ctx, response.data);
