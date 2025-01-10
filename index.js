@@ -77,6 +77,7 @@ module.exports = {
 };
 
 // === scenarios.js ===
+// Удалён дублирующий импорт переменной 'db'
 
 module.exports = {
     start: async (ctx) => {
@@ -94,10 +95,10 @@ module.exports = {
     },
 
     help: (ctx) => {
-        ctx.reply('Доступные команды:
+        ctx.reply(`Доступные команды:
 /start - Начать работу
 /help - Список команд
 /profile - Просмотр и редактирование профиля
-/analyze - Отправка данных для анализа');;
+/analyze - Отправка данных для анализа`);;;
     }
 };
