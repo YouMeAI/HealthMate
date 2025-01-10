@@ -32,6 +32,7 @@ const { open } = require('sqlite');
 
 const DATABASE_PATH = process.env.DATABASE_PATH || './database.db';
 
+let db;
 (async () => {
     db = await open({
         filename: DATABASE_PATH,
@@ -94,39 +95,10 @@ module.exports = {
     },
 
     help: (ctx) => {
-        ctx.reply('Доступные команды:\n/start - Начать работу\n/help - Список команд\n/profile - Просмотр и редактирование профиля\n/analyze - Отправка данных для анализа');
+        ctx.reply('Доступные команды:
 /start - Начать работу
 /help - Список команд
 /profile - Просмотр и редактирование профиля
-/analyze - Отправка данных для анализа');
-    },
-
-    profile: async (ctx) => {
-        const telegramId = ctx.from.id;
-        const profile = await db.getUserProfile(telegramId);
-
-        if (profile) {
-            ctx.reply(`Ваш профиль:
-Возраст: ${profile.age || 'не указан'}
-Пол: ${profile.gender || 'не указан'}
-Рост: ${profile.height || 'не указан'} см
-Вес: ${profile.weight || 'не указан'} кг
-
-Чтобы обновить данные, отправьте их в формате: возраст, пол, рост, вес.`);
-        } else {
-            ctx.reply('Ваш профиль не найден. Пожалуйста, используйте /start для создания профиля.');
-        }
-    },
-
-    analyze: (ctx) => {
-        ctx.reply('Отправьте текст, изображение или PDF для анализа.');
-    },
-
-    textHandler: async (ctx) => {
-        ctx.reply('Я пока не могу обрабатывать текстовые данные, но скоро научусь!');
-    },
-
-    fileHandler: async (ctx) => {
-        ctx.reply('Обработка файлов пока не поддерживается.');
+/analyze - Отправка данных для анализа');;
     }
 };
