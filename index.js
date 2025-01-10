@@ -1,6 +1,6 @@
 // === bot.js ===
 require('dotenv').config();
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
 const scenarios = require('./scenarios');
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -11,17 +11,23 @@ if (!TELEGRAM_BOT_TOKEN) {
 
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// === Подключение сценариев ===
-bot.start(scenarios.start || ((ctx) => ctx.reply('Ошибка: обработчик /start не найден.')));
-bot.command('help', scenarios.help || ((ctx) => ctx.reply('Ошибка: обработчик /help не найден.')));
-bot.command('profile', scenarios.profile || ((ctx) => ctx.reply('Ошибка: обработчик /profile не найден.')));
-bot.command('analyze', scenarios.analyze || ((ctx) => ctx.reply('Ошибка: обработчик /analyze не найден.')));
+// === Подключение кнопок ===
+bot.start((ctx) => {
+    ctx.reply('Добро пожаловать! Выберите действие:', Markup.keyboard([
+        ['📋 Помощь', '👤 Профиль'],
+        ['📊 Анализ данных']
+    ]).resize());
+});
 
-bot.on('text', scenarios.textHandler || ((ctx) => ctx.reply('Ошибка: обработчик текстовых сообщений не найден.')));
-bot.on(['photo', 'document'], scenarios.fileHandler || ((ctx) => ctx.reply('Ошибка: обработчик файлов не найден.')));
+bot.hears('📋 Помощь', scenarios.help);
+bot.hears('👤 Профиль', scenarios.profile);
+bot.hears('📊 Анализ данных', scenarios.analyze);
+
+bot.on('text', scenarios.textHandler);
+bot.on(['photo', 'document'], scenarios.fileHandler);
 
 bot.launch();
-console.log('Бот запущен!');
+console.log('Бот запущен с кнопками!');
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
@@ -77,23 +83,9 @@ module.exports = {
 };
 
 // === scenarios.js ===
-// Удалён дублирующий импорт переменной 'db'
+const db = require('./database');
 
 module.exports = {
-    start: async (ctx) => {
-        const telegramId = ctx.from.id;
-        const username = ctx.from.username || 'unknown';
-
-        const user = await db.getUserByTelegramId(telegramId);
-
-        if (!user) {
-            await db.createUser(telegramId, username);
-            ctx.reply('Привет! Ваш профиль создан. Используйте /help, чтобы узнать, что я могу.');
-        } else {
-            ctx.reply('С возвращением! Вы уже зарегистрированы.');
-        }
-    },
-
     help: (ctx) => {
         ctx.reply(`Доступные команды:\n/start - Начать работу\n/help - Список команд\n/profile - Просмотр и редактирование профиля\n/analyze - Отправка данных для анализа`);
     },
