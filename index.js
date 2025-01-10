@@ -83,7 +83,7 @@ module.exports = {
 };
 
 // === scenarios.js ===
-const db = require('./database');
+// Удалён повторный импорт 'db'
 
 module.exports = {
     help: (ctx) => {
