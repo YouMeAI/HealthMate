@@ -77,7 +77,6 @@ module.exports = {
 };
 
 // === scenarios.js ===
-const db = require('./database');
 
 module.exports = {
     start: async (ctx) => {
