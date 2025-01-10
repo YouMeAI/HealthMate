@@ -8,6 +8,10 @@ const { fromPath } = require('pdf2pic'); // Конвертация PDF в изо
 const sqlite3 = require('sqlite3').verbose(); // База данных SQLite
 const { open } = require('sqlite'); // Подключение к базе данных
 
+const { initializeDatabase, getUser, createUser, saveFile } = require('./database');
+const { analyzeAndCompare } = require('./analyze');
+const { processFile, handleImage, handlePDF } = require('./fileHandlers');
+
 // Подключаем токены из переменных окружения
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -22,32 +26,10 @@ if (!TELEGRAM_BOT_TOKEN || !OPENAI_API_KEY) {
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// === База данных ===
+// Инициализация базы данных
 let db;
 (async () => {
-  db = await open({
-    filename: DATABASE_PATH,
-    driver: sqlite3.Database
-  });
-
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY,
-      telegram_id TEXT UNIQUE,
-      username TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS files (
-      id INTEGER PRIMARY KEY,
-      user_id INTEGER,
-      filename TEXT,
-      filetype TEXT,
-      content TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    );
-  `);
+  db = await initializeDatabase(DATABASE_PATH);
 })();
 
 // === Авторизация и создание профиля ===
@@ -55,74 +37,21 @@ bot.start(async (ctx) => {
   const telegramId = ctx.from.id;
   const username = ctx.from.username || 'unknown';
 
-  const user = await db.get('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
+  const user = await getUser(db, telegramId);
 
   if (!user) {
-    await db.run('INSERT INTO users (telegram_id, username) VALUES (?, ?)', [telegramId, username]);
+    await createUser(db, telegramId, username);
     ctx.reply('Профиль создан! Теперь вы можете загружать файлы и использовать анализ AI.');
   } else {
     ctx.reply('С возвращением! Вы уже авторизованы. Готовы продолжить?.');
   }
 });
 
-// === Функция анализа новых данных ===
-async function analyzeAndCompare(ctx, newContent) {
-  try {
-    const telegramId = ctx.from.id;
-    const user = await db.get('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
-    if (!user) {
-      ctx.reply('Ошибка: Пользователь не найден. Пожалуйста, начните с команды /start.');
-      return;
-    }
-
-    const previousFile = await db.get(
-      'SELECT * FROM files WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
-      [user.id]
-    );
-
-    let comparisonResult = 'Это ваш первый загруженный анализ.';
-
-    if (previousFile) {
-      const comparisonPrompt = `Сравни следующие данные анализов:
-
-Последние данные:
-${newContent}
-
-Предыдущие данные:
-${previousFile.content}
-
-Найди различия и укажи, в каких показателях произошли изменения. Отметь значительные отклонения.`;
-
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'user', content: comparisonPrompt }
-        ],
-      });
-
-      comparisonResult = response.choices[0].message.content;
-    }
-
-    ctx.reply(comparisonResult);
-
-    await db.run('INSERT INTO files (user_id, filename, filetype, content) VALUES (?, ?, ?, ?)', [
-      user.id,
-      `analyze_${Date.now()}.txt`,
-      'text/plain',
-      newContent
-    ]);
-
-  } catch (error) {
-    console.error('Ошибка анализа и сравнения данных:', error.message);
-    ctx.reply('Произошла ошибка при анализе данных.');
-  }
-}
-
 // === Обработка текстовых сообщений ===
 bot.on('text', async (ctx) => {
   try {
     await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
-    await analyzeAndCompare(ctx, ctx.message.text);
+    await analyzeAndCompare(ctx, ctx.message.text, db, openai);
   } catch (error) {
     console.error('Ошибка обработки текста:', error.message);
     ctx.reply('Произошла ошибка при обработке текста.');
@@ -130,47 +59,6 @@ bot.on('text', async (ctx) => {
 });
 
 // === Обработка изображений и файлов ===
-async function processFile(ctx, fileBuffer, fileName, fileType, extractedText) {
-  try {
-    await analyzeAndCompare(ctx, extractedText);
-  } catch (error) {
-    console.error('Ошибка обработки файла:', error.message);
-    ctx.reply('Не удалось обработать файл.');
-  }
-}
-
-async function handleImage(ctx, responseBuffer) {
-  try {
-    const imageBuffer = await sharp(responseBuffer).toFormat('jpeg').toBuffer();
-    const extractedText = 'Текст из изображения'; // Реализуйте извлечение текста, если требуется
-    await processFile(ctx, imageBuffer, 'uploaded_image.jpg', 'image/jpeg', extractedText);
-  } catch (error) {
-    console.error('Ошибка обработки изображения:', error.message);
-    ctx.reply('Не удалось обработать изображение.');
-  }
-}
-
-async function handlePDF(ctx, responseBuffer) {
-  try {
-    const filePath = './file.pdf';
-    fs.writeFileSync(filePath, responseBuffer);
-    const converter = fromPath(filePath, {
-      density: 300,
-      saveFilename: 'converted_page',
-      savePath: './',
-      format: 'png',
-    });
-
-    const pages = await converter(1);
-    const imageBuffer = fs.readFileSync(pages.path);
-    const extractedText = 'Текст из PDF-файла'; // Реализуйте извлечение текста, если требуется
-    await processFile(ctx, imageBuffer, 'converted_page.png', 'image/png', extractedText);
-  } catch (error) {
-    console.error('Ошибка обработки PDF:', error.message);
-    ctx.reply('Не удалось обработать PDF-файл.');
-  }
-}
-
 bot.on(['photo', 'document'], async (ctx) => {
   try {
     console.log('Received message:', ctx.message);
@@ -208,3 +96,150 @@ bot.launch();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+// database.js
+module.exports = {
+  initializeDatabase: async (databasePath) => {
+    const db = await open({
+      filename: databasePath,
+      driver: sqlite3.Database
+    });
+  
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        telegram_id TEXT UNIQUE,
+        username TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+  
+      CREATE TABLE IF NOT EXISTS files (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER,
+        filename TEXT,
+        filetype TEXT,
+        content TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+      );
+    `);
+  
+    return db;
+  },
+  getUser: async (db, telegramId) => {
+    return db.get('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
+  },
+  createUser: async (db, telegramId, username) => {
+    await db.run('INSERT INTO users (telegram_id, username) VALUES (?, ?)', [telegramId, username]);
+  },
+  saveFile: async (db, userId, fileName, fileType, content) => {
+    await db.run('INSERT INTO files (user_id, filename, filetype, content) VALUES (?, ?, ?, ?)', [
+      userId,
+      fileName,
+      fileType,
+      content
+    ]);
+  }
+};
+
+// analyze.js
+module.exports = {
+  analyzeAndCompare: async (ctx, newContent, db, openai) => {
+    try {
+      const telegramId = ctx.from.id;
+      const user = await db.get('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
+      if (!user) {
+        ctx.reply('Ошибка: Пользователь не найден. Пожалуйста, начните с команды /start.');
+        return;
+      }
+  
+      const previousFile = await db.get(
+        'SELECT * FROM files WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+        [user.id]
+      );
+  
+      let comparisonResult = 'Это ваш первый загруженный анализ.';
+  
+      if (previousFile) {
+        const comparisonPrompt = `Сравни следующие данные анализов:
+  
+  Последние данные:
+  ${newContent}
+  
+  Предыдущие данные:
+  ${previousFile.content}
+  
+  Найди различия и укажи, в каких показателях произошли изменения. Отметь значительные отклонения.`;
+  
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'user', content: comparisonPrompt }
+          ],
+        });
+  
+        comparisonResult = response.choices[0].message.content;
+      }
+  
+      ctx.reply(comparisonResult);
+  
+      await db.run('INSERT INTO files (user_id, filename, filetype, content) VALUES (?, ?, ?, ?)', [
+        user.id,
+        `analyze_${Date.now()}.txt`,
+        'text/plain',
+        newContent
+      ]);
+  
+    } catch (error) {
+      console.error('Ошибка анализа и сравнения данных:', error.message);
+      ctx.reply('Произошла ошибка при анализе данных.');
+    }
+  }
+};
+
+// fileHandlers.js
+const sharp = require('sharp');
+const fs = require('fs');
+const { fromPath } = require('pdf2pic');
+const { analyzeAndCompare } = require('./analyze');
+
+module.exports = {
+  processFile: async (ctx, fileBuffer, fileName, fileType, extractedText) => {
+    try {
+      await analyzeAndCompare(ctx, extractedText);
+    } catch (error) {
+      console.error('Ошибка обработки файла:', error.message);
+      ctx.reply('Не удалось обработать файл.');
+    }
+  },
+  handleImage: async (ctx, responseBuffer) => {
+    try {
+      const imageBuffer = await sharp(responseBuffer).toFormat('jpeg').toBuffer();
+      const extractedText = 'Текст из изображения'; // Реализуйте извлечение текста, если требуется
+      await module.exports.processFile(ctx, imageBuffer, 'uploaded_image.jpg', 'image/jpeg', extractedText);
+    } catch (error) {
+      console.error('Ошибка обработки изображения:', error.message);
+      ctx.reply('Не удалось обработать изображение.');
+    }
+  },
+  handlePDF: async (ctx, responseBuffer) => {
+    try {
+      const filePath = './file.pdf';
+      fs.writeFileSync(filePath, responseBuffer);
+      const converter = fromPath(filePath, {
+        density: 300,
+        saveFilename: 'converted_page',
+        savePath: './',
+        format: 'png',
+      });
+  
+      const pages = await converter(1);
+      const imageBuffer = fs.readFileSync(pages.path);
+      const extractedText = 'Текст из PDF-файла'; // Реализуйте извлечение текста, если требуется
+      await module.exports.processFile(ctx, imageBuffer, 'converted_page.png', 'image/png', extractedText);
+    } catch (error) {
+      console.error('Ошибка обработки PDF:', error.message);
+      ctx.reply('Не удалось обработать PDF-файл.');
+    }
+  }
+};
