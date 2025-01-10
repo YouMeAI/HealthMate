@@ -112,6 +112,21 @@ ${previousFile.content}
   }
 });
 
+// === Обработка всех сообщений для отладки ===
+bot.on('message', async (ctx) => {
+  console.log('Событие:', ctx.updateType, ctx.message);
+
+  if (ctx.message.photo) {
+    console.log('Фото:', ctx.message.photo);
+    ctx.reply('Получено фото.');
+  } else if (ctx.message.document) {
+    console.log('Документ:', ctx.message.document);
+    ctx.reply('Получен документ.');
+  } else {
+    console.log('Другое сообщение:', ctx.message);
+  }
+});
+
 // === Обработка изображений и файлов ===
 async function processFile(ctx, fileBuffer, fileName, fileType, extractedText) {
   try {
@@ -167,6 +182,12 @@ bot.on(['photo', 'document'], async (ctx) => {
     }
 
     const fileLink = await ctx.telegram.getFileLink(file.file_id);
+    if (!fileLink || !fileLink.href) {
+      console.error('Invalid file link:', fileLink);
+      ctx.reply('Не удалось получить ссылку на файл.');
+      return;
+    }
+
     console.log('File link:', fileLink.href);
 
     const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
