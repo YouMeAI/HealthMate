@@ -1,7 +1,7 @@
 // === bot.js ===
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
-const db = require('./database');
+// Уже существует, убираем дублирующий импорт
 const { handleFile } = require('./fileHandler');
 const { analyzeAndCompare } = require('./analyze');
 
