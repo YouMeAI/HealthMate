@@ -61,39 +61,37 @@ bot.start(async (ctx) => {
     await db.run('INSERT INTO users (telegram_id, username) VALUES (?, ?)', [telegramId, username]);
     ctx.reply('Профиль создан! Теперь вы можете загружать файлы и использовать анализ AI.');
   } else {
-    ctx.reply('С возвращением! Вы уже авторизованы. Погнали к делу.');
+    ctx.reply('С возвращением! Вы уже авторизованы. Загружайте файлы или задавайте вопросы.');
   }
 });
 
-// === Обработка текстовых сообщений ===
-bot.on('text', async (ctx) => {
+// === Функция анализа новых данных ===
+async function analyzeAndCompare(ctx, newContent) {
   try {
-    // Показываем индикатор набора текста (бегущие точки)
-    await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
-
     const telegramId = ctx.from.id;
     const user = await db.get('SELECT * FROM users WHERE telegram_id = ?', [telegramId]);
+    if (!user) {
+      ctx.reply('Ошибка: Пользователь не найден. Пожалуйста, начните с команды /start.');
+      return;
+    }
 
-    if (ctx.message.text.toLowerCase().includes('сравнить')) {
-      const files = await db.all('SELECT * FROM files WHERE user_id = ?', [user.id]);
+    const previousFile = await db.get(
+      'SELECT * FROM files WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+      [user.id]
+    );
 
-      if (files.length < 2) {
-        ctx.reply('Недостаточно данных для сравнения. Загрузите хотя бы два файла.');
-        return;
-      }
+    let comparisonResult = 'Это ваш первый загруженный анализ.';
 
-      const latestFile = files[files.length - 1];
-      const previousFile = files[files.length - 2];
-
+    if (previousFile) {
       const comparisonPrompt = `Сравни следующие данные анализов:
 
 Последние данные:
-${latestFile.content}
+${newContent}
 
 Предыдущие данные:
 ${previousFile.content}
 
-Найди различия и укажи, в каких показателях произошли изменения. Отметь значительные изменения.`;
+Найди различия и укажи, в каких показателях произошли изменения. Отметь значительные отклонения.`;
 
       const response = await openai.chat.completions.create({
         model: 'gpt-4o',
@@ -102,40 +100,42 @@ ${previousFile.content}
         ],
       });
 
-      ctx.reply(response.choices[0].message.content);
-    } else {
-      ctx.reply('Напишите "сравнить", чтобы анализировать ваши данные.');
+      comparisonResult = response.choices[0].message.content;
     }
+
+    ctx.reply(comparisonResult);
+
+    await db.run('INSERT INTO files (user_id, filename, filetype, content) VALUES (?, ?, ?, ?)', [
+      user.id,
+      `analyze_${Date.now()}.txt`,
+      'text/plain',
+      newContent
+    ]);
+
+  } catch (error) {
+    console.error('Ошибка анализа и сравнения данных:', error.message);
+    ctx.reply('Произошла ошибка при анализе данных.');
+  }
+}
+
+// === Обработка текстовых сообщений ===
+bot.on('text', async (ctx) => {
+  try {
+    await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
+    await analyzeAndCompare(ctx, ctx.message.text);
   } catch (error) {
     console.error('Ошибка обработки текста:', error.message);
     ctx.reply('Произошла ошибка при обработке текста.');
   }
 });
 
-// === Обработка всех сообщений для отладки ===
-bot.on('message', async (ctx) => {
-  console.log('Событие:', ctx.updateType, ctx.message);
-
-  if (ctx.message.photo) {
-    console.log('Фото:', ctx.message.photo);
-    ctx.reply('Получено фото.');
-  } else if (ctx.message.document) {
-    console.log('Документ:', ctx.message.document);
-    ctx.reply('Получен документ.');
-  } else {
-    console.log('Другое сообщение:', ctx.message);
-  }
-});
-
 // === Обработка изображений и файлов ===
 async function processFile(ctx, fileBuffer, fileName, fileType, extractedText) {
   try {
-    const userId = await db.get('SELECT id FROM users WHERE telegram_id = ?', [ctx.from.id]);
-    await db.run('INSERT INTO files (user_id, filename, filetype, content) VALUES (?, ?, ?, ?)', [userId.id, fileName, fileType, extractedText]);
-    ctx.reply('Файл успешно обработан и сохранён.');
+    await analyzeAndCompare(ctx, extractedText);
   } catch (error) {
-    console.error('Ошибка сохранения файла в базу данных:', error.message);
-    ctx.reply('Не удалось сохранить файл.');
+    console.error('Ошибка обработки файла:', error.message);
+    ctx.reply('Не удалось обработать файл.');
   }
 }
 
