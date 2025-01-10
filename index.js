@@ -1,6 +1,6 @@
 // === bot.js ===
 require('dotenv').config();
-const { Telegraf, Markup } = require('telegraf');
+const { Telegraf, Markup, session } = require('telegraf');
 const scenarios = require('./scenarios');
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -10,6 +10,8 @@ if (!TELEGRAM_BOT_TOKEN) {
 }
 
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+
+bot.use(session());
 
 // === Подключение кнопок ===
 bot.start((ctx) => {
@@ -87,7 +89,7 @@ module.exports = {
 
 module.exports = {
     help: (ctx) => {
-        ctx.reply(`Доступные команды:\n/start - Начать работу\n/help - Список команд\n/profile - Просмотр и редактирование профиля\n/analyze - Отправка данных для анализа`);
+        ctx.reply('Список команд:\n/help - помощь\n/profile - профиль\n/analyze - анализ данных');
     },
 
     profile: async (ctx) => {
@@ -105,11 +107,11 @@ module.exports = {
         ctx.reply('Отправьте текст, изображение или PDF для анализа.');
     },
 
-    textHandler: async (ctx) => {
-        ctx.reply('Обработка текстовых сообщений временно недоступна.');
+    textHandler: (ctx) => {
+        ctx.reply('Вы отправили текст.');
     },
 
     fileHandler: async (ctx) => {
-        ctx.reply('Обработка файлов временно недоступна.');
+        ctx.reply('Файл получен.');
     }
 };
