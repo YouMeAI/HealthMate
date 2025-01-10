@@ -23,7 +23,7 @@ bot.start(async (ctx) => {
         await db.createUser(telegramId, username);
         ctx.reply('Профиль создан! Теперь вы можете загружать файлы и использовать анализ AI.');
     } else {
-        ctx.reply('С возвращением! Вы уже авторизованы мешок.');
+        ctx.reply('С возвращением! Вы уже авторизованы. Загружайте файлы или задавайте вопросы.');
     }
 });
 
@@ -108,9 +108,7 @@ module.exports = {
 
 
 // === fileHandler.js ===
-const sharp = require('sharp');
 const axios = require('axios');
-const { fromPath } = require('pdf2pic');
 const db = require('./database');
 const { analyzeAndCompare } = require('./analyze');
 
@@ -124,34 +122,45 @@ async function handleFile(ctx) {
     const fileLink = await ctx.telegram.getFileLink(file.file_id);
     const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
 
-    if (file.mime_type === 'application/pdf') {
-        await handlePDF(ctx, response.data);
+    const fileType = file.mime_type || 'unknown';
+
+    if (fileType.startsWith('image/')) {
+        await processImage(ctx, response.data);
+    } else if (fileType === 'application/pdf') {
+        await processPDF(ctx, response.data);
     } else {
-        await handleImage(ctx, response.data);
+        ctx.reply('Извините, но я пока не поддерживаю этот тип файла.');
     }
 }
 
-async function handleImage(ctx, buffer) {
-    const extractedText = 'Текст из изображения'; // Здесь будет извлечение текста (OCR)
-    await analyzeAndCompare(ctx, extractedText);
+async function processImage(ctx, imageBuffer) {
+    try {
+        const response = await require('./analyze').sendToGPT({
+            role: 'user',
+            content: 'Это изображение анализа. Пожалуйста, извлеките текстовую информацию из этого изображения.',
+            image: imageBuffer.toString('base64'), // Отправляем изображение в GPT как Base64
+        });
+
+        await analyzeAndCompare(ctx, response);
+    } catch (error) {
+        console.error('Ошибка обработки изображения через GPT:', error.message);
+        ctx.reply('Не удалось обработать изображение.');
+    }
 }
 
-async function handlePDF(ctx, buffer) {
-    const filePath = './temp.pdf';
-    const imagePath = './temp_image.png';
-    require('fs').writeFileSync(filePath, buffer);
+async function processPDF(ctx, pdfBuffer) {
+    try {
+        const response = await require('./analyze').sendToGPT({
+            role: 'user',
+            content: 'Это PDF с данными анализа. Пожалуйста, извлеките текстовую информацию из этого документа.',
+            file: pdfBuffer.toString('base64'), // Отправляем PDF как Base64
+        });
 
-    const converter = fromPath(filePath, {
-        density: 300,
-        saveFilename: 'converted_page',
-        savePath: './',
-        format: 'png',
-    });
-
-    const pages = await converter(1);
-    const imageBuffer = require('fs').readFileSync(pages.path);
-    const extractedText = 'Текст из PDF'; // Здесь будет извлечение текста (OCR)
-    await analyzeAndCompare(ctx, extractedText);
+        await analyzeAndCompare(ctx, response);
+    } catch (error) {
+        console.error('Ошибка обработки PDF через GPT:', error.message);
+        ctx.reply('Не удалось обработать PDF.');
+    }
 }
 
 module.exports = { handleFile };
@@ -162,6 +171,20 @@ const { OpenAIApi, Configuration } = require('openai');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAIApi(new Configuration({ apiKey: OPENAI_API_KEY }));
+
+// Отправка данных в GPT
+async function sendToGPT(prompt) {
+    try {
+        const response = await openai.createChatCompletion({
+            model: 'gpt-4o-mini',
+            messages: [prompt],
+        });
+        return response.data.choices[0].message.content.trim();
+    } catch (error) {
+        console.error('Ошибка взаимодействия с GPT:', error.message);
+        throw error;
+    }
+}
 
 async function analyzeAndCompare(ctx, newContent) {
     const telegramId = ctx.from.id;
@@ -180,17 +203,12 @@ async function analyzeAndCompare(ctx, newContent) {
 ${newContent}
 Предыдущие:
 ${previousFile.content}`;
-
-        const response = await openai.createChatCompletion({
-            model: 'gpt-4-mini',
-            messages: [{ role: 'user', content: comparisonPrompt }],
-        });
-
-        comparisonResult = response.data.choices[0].message.content;
+        const response = await sendToGPT({ role: 'user', content: comparisonPrompt });
+        comparisonResult = response;
     }
 
     ctx.reply(comparisonResult);
     await require('./database').saveFile(user.id, `analyze_${Date.now()}.txt`, 'text/plain', newContent);
 }
 
-module.exports = { analyzeAndCompare };
+module.exports = { analyzeAndCompare, sendToGPT };
