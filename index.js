@@ -12,13 +12,13 @@ if (!TELEGRAM_BOT_TOKEN) {
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
 // === Подключение сценариев ===
-bot.start(scenarios.start);
-bot.command('help', scenarios.help);
-bot.command('profile', scenarios.profile);
-bot.command('analyze', scenarios.analyze);
+bot.start(scenarios.start || ((ctx) => ctx.reply('Ошибка: обработчик /start не найден.')));
+bot.command('help', scenarios.help || ((ctx) => ctx.reply('Ошибка: обработчик /help не найден.')));
+bot.command('profile', scenarios.profile || ((ctx) => ctx.reply('Ошибка: обработчик /profile не найден.')));
+bot.command('analyze', scenarios.analyze || ((ctx) => ctx.reply('Ошибка: обработчик /analyze не найден.')));
 
-bot.on('text', scenarios.textHandler);
-bot.on(['photo', 'document'], scenarios.fileHandler);
+bot.on('text', scenarios.textHandler || ((ctx) => ctx.reply('Ошибка: обработчик текстовых сообщений не найден.')));
+bot.on(['photo', 'document'], scenarios.fileHandler || ((ctx) => ctx.reply('Ошибка: обработчик файлов не найден.')));
 
 bot.launch();
 console.log('Бот запущен!');
@@ -77,7 +77,7 @@ module.exports = {
 };
 
 // === scenarios.js ===
-// Удалён дублирующий импорт переменной 'db'
+const db = require('./database');
 
 module.exports = {
     start: async (ctx) => {
@@ -95,10 +95,29 @@ module.exports = {
     },
 
     help: (ctx) => {
-        ctx.reply(`Доступные команды:
-/start - Начать работу
-/help - Список команд
-/profile - Просмотр и редактирование профиля
-/analyze - Отправка данных для анализа`);;;
+        ctx.reply(`Доступные команды:\n/start - Начать работу\n/help - Список команд\n/profile - Просмотр и редактирование профиля\n/analyze - Отправка данных для анализа`);
+    },
+
+    profile: async (ctx) => {
+        const telegramId = ctx.from.id;
+        const profile = await db.getUserProfile(telegramId);
+
+        if (profile) {
+            ctx.reply(`Ваш профиль:\nВозраст: ${profile.age || 'не указан'}\nПол: ${profile.gender || 'не указан'}\nРост: ${profile.height || 'не указан'} см\nВес: ${profile.weight || 'не указан'} кг\n\nЧтобы обновить данные, отправьте их в формате: возраст, пол, рост, вес.`);
+        } else {
+            ctx.reply('Ваш профиль не найден. Пожалуйста, используйте /start для создания профиля.');
+        }
+    },
+
+    analyze: (ctx) => {
+        ctx.reply('Отправьте текст, изображение или PDF для анализа.');
+    },
+
+    textHandler: async (ctx) => {
+        ctx.reply('Обработка текстовых сообщений временно недоступна.');
+    },
+
+    fileHandler: async (ctx) => {
+        ctx.reply('Обработка файлов временно недоступна.');
     }
 };
