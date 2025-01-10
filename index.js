@@ -32,7 +32,6 @@ const { open } = require('sqlite');
 
 const DATABASE_PATH = process.env.DATABASE_PATH || './database.db';
 
-let db;
 (async () => {
     db = await open({
         filename: DATABASE_PATH,
