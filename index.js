@@ -1,9 +1,9 @@
 // === bot.js ===
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
-// Уже существует, убираем дублирующий импорт
+const db = require('./database');
 const { handleFile } = require('./fileHandler');
-// Удалён повторный импорт analyzeAndCompare
+const { analyzeAndCompare } = require('./analyze');
 
 // Telegram Bot Setup
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -62,7 +62,7 @@ const { open } = require('sqlite');
 
 const DATABASE_PATH = process.env.DATABASE_PATH || './database.db';
 
-// Удалено дублирующее объявление переменной 'db'
+let db;
 (async () => {
     db = await open({
         filename: DATABASE_PATH,
@@ -109,7 +109,6 @@ module.exports = {
 
 // === fileHandler.js ===
 const axios = require('axios');
-const db = require('./database');
 const { analyzeAndCompare } = require('./analyze');
 
 async function handleFile(ctx) {
