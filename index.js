@@ -77,7 +77,7 @@ module.exports = {
 };
 
 // === scenarios.js ===
-const db = require('./database');
+// Удалён дублирующий импорт переменной 'db'
 
 module.exports = {
     start: async (ctx) => {
