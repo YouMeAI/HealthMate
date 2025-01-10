@@ -3,7 +3,7 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 // Уже существует, убираем дублирующий импорт
 const { handleFile } = require('./fileHandler');
-const { analyzeAndCompare } = require('./analyze');
+// Удалён повторный импорт analyzeAndCompare
 
 // Telegram Bot Setup
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
