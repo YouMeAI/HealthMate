@@ -61,7 +61,7 @@ bot.start(async (ctx) => {
     await db.run('INSERT INTO users (telegram_id, username) VALUES (?, ?)', [telegramId, username]);
     ctx.reply('Профиль создан! Теперь вы можете загружать файлы и использовать анализ AI.');
   } else {
-    ctx.reply('С возвращением! Вы уже авторизованы. Загружайте файлы или задавайте вопросы.');
+    ctx.reply('С возвращением! Вы уже авторизованы. Погнали к делу.');
   }
 });
 
