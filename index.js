@@ -1,4 +1,3 @@
-// === bot.js ===
 require('dotenv').config();
 const { Telegraf, Markup, session } = require('telegraf');
 const scenarios = require('./scenarios');
@@ -17,13 +16,16 @@ bot.use(session());
 bot.start((ctx) => {
     ctx.reply('Добро пожаловать! Выберите действие:', Markup.keyboard([
         ['📋 Помощь', '👤 Профиль'],
-        ['📊 Анализ данных']
+        ['📊 Анализ данных', '📂 Загрузить файлы']
     ]).resize());
 });
 
 bot.hears('📋 Помощь', scenarios.help);
 bot.hears('👤 Профиль', scenarios.profile);
 bot.hears('📊 Анализ данных', scenarios.analyze);
+bot.command('upload', scenarios.upload);
+bot.command('analyze', scenarios.analyze);
+bot.hears('📂 Загрузить файлы', scenarios.upload);
 
 bot.on('text', scenarios.textHandler);
 bot.on(['photo', 'document'], scenarios.fileHandler);
