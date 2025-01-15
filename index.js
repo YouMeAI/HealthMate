@@ -60,19 +60,6 @@ let db;
             weight REAL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
-
-        CREATE TABLE IF NOT EXISTS files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            telegram_id TEXT,
-            file_id TEXT,
-            file_name TEXT,
-            file_type TEXT,
-            file_content TEXT,
-            analysis_data TEXT,
-            uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        );
     `);
 })();
 
@@ -96,28 +83,20 @@ module.exports = {
     },
     getUserProfile: async (telegramId) => {
         return db.get('SELECT age, gender, height, weight FROM users WHERE telegram_id = ?', [telegramId]);
-    },
-    saveFile: async (fileData) => {
-        const { user_id, telegram_id, file_id, file_name, file_type, file_content, analysis_data } = fileData;
-        await db.run(`
-            INSERT INTO files (user_id, telegram_id, file_id, file_name, file_type, file_content, analysis_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [user_id, telegram_id, file_id, file_name, file_type, file_content, analysis_data]);
-    },
-    getUserFilesByTelegramId: async (telegramId) => {
-        return db.all('SELECT * FROM files WHERE telegram_id = ?', [telegramId]);
-    },
+    }
 };
 
 // === scenarios.js ===
+// Удалён повторный импорт 'db'
+
 module.exports = {
     help: (ctx) => {
-        ctx.reply('Список команд:\n/help - помощь\n/profile - профиль\n/analyze - анализ данных\n/upload - загрузить файлы.');
+        ctx.reply('Список команд:\n/help - помощь\n/profile - профиль\n/analyze - анализ данных');
     },
 
     profile: async (ctx) => {
         const telegramId = ctx.from.id;
-        const profile = await db.getUserByTelegramId(telegramId);
+        const profile = await db.getUserProfile(telegramId);
 
         if (profile) {
             ctx.reply(`Ваш профиль:\nВозраст: ${profile.age || 'не указан'}\nПол: ${profile.gender || 'не указан'}\nРост: ${profile.height || 'не указан'} см\nВес: ${profile.weight || 'не указан'} кг\n\nЧтобы обновить данные, отправьте их в формате: возраст, пол, рост, вес.`);
@@ -126,47 +105,11 @@ module.exports = {
         }
     },
 
-    analyze: async (ctx) => {
-        const telegramId = ctx.from.id;
-        try {
-            const userData = await db.getUserByTelegramId(telegramId);
-
-            if (!userData) {
-                ctx.reply('Пожалуйста, создайте профиль с помощью команды /profile перед анализом данных.');
-                return;
-            }
-
-            const userFiles = await db.getUserFilesByTelegramId(telegramId);
-
-            if (!userFiles || userFiles.length === 0) {
-                ctx.reply('У вас нет загруженных файлов для анализа. Используйте команду /upload, чтобы загрузить данные.');
-                return;
-            }
-
-            ctx.reply('Пожалуйста, подождите. Ваши данные анализируются...');
-
-            const analysisText = `Профиль пользователя:\nВозраст: ${userData.age || 'не указан'}\nПол: ${userData.gender || 'не указан'}\nРост: ${userData.height || 'не указан'} см\nВес: ${userData.weight || 'не указан'} кг\n`;
-
-            const report = await gpt4.generateReport({ userData, userFiles });
-
-            if (report.error) {
-                ctx.reply(`Не удалось завершить анализ данных. Причина: ${report.message}`);
-                return;
-            }
-
-            ctx.reply(`Анализ завершён. Ваш отчёт:\n\n${report.text}`);
-
-        } catch (error) {
-            console.error('Ошибка анализа данных:', error);
-            ctx.reply('Произошла ошибка при анализе данных. Попробуйте позже.');
-        }
+    analyze: (ctx) => {
+        ctx.reply('Отправьте текст, изображение или PDF для анализа.');
     },
 
-    upload: async (ctx) => {
-        ctx.reply('Пожалуйста, загрузите свои файлы для анализа.');
-    },
-
-    textHandler: async (ctx) => {
+    textHandler: (ctx) => {
         ctx.reply('Вы отправили текст.');
     },
 
